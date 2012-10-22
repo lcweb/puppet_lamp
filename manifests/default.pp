@@ -12,10 +12,9 @@ class params {
 
     # Database names (must match your app/config/parameters.ini file)
     $dbname = 'project'
+    $dbtest = 'test'
     $dbuser = 'project'
     $dbpass = 'secret'
-
-    $filepath = '/vagrant/modules'
 
 
     $phpmyadmin = true
@@ -29,6 +28,12 @@ class sql {
         command => "/usr/bin/mysql -e \"create database ${params::dbname}; grant all on ${params::dbname}.* to ${params::dbuser}@localhost identified by '${params::dbpass}';\"",
         require => Service["mysql"],
     }
+
+    exec { 'create-db-test':
+        unless => "/usr/bin/mysql -u${params::dbuser} -p${params::dbpass} ${params::dbtest}",
+        command => "/usr/bin/mysql -e \"create database ${params::dbtest}; grant all on ${params::dbtest}.* to ${params::dbuser}@localhost identified by '${params::dbpass}';\"",
+        require => Service["mysql"],
+    }    
 
 }
 
@@ -74,6 +79,11 @@ class web {
         port      => $params::port,
     }
 
+    # enable mod_rewrite
+    exec { "a2enmod rewrite":
+      notify => Service['apache'],
+      require => Package['apache']
+    }
 
 
     class { 'php': 
@@ -83,6 +93,7 @@ class web {
     php::module { "mysql" : }
     php::module { "gd" : }
     php::module { "sqlite" : }
+    php::module { "xdebug" : }
 
    
     file { "/etc/php5/apache2/conf.d/myconf.ini": 
@@ -91,8 +102,33 @@ class web {
       require => Package['php'],
       notify => Service['apache']
     }   
+
+
+
+    # Install PHPMyAdmin on /phpmyadmin
+    package { "phpMyAdmin" :
+        ensure  => present,
+    }
+
+    # Setup our own phpmyadmin configuration file
+    file { "/etc/apache2/conf.d/phpMyAdmin.conf" :
+        #source  => "puppet:///modules/project/phpmyadmin.conf",
+        content => template("my_conf_files/phpmyadmin.conf"),
+        owner   => "root",
+        group   => "root",
+        require => Package["phpMyAdmin"],
+        notify  => Service["apache"],
+    }    
   
 }
+
+
+
+class mail {
+  class { 'postfix': }
+}
+
+
 
 node default {
   stage { 'first': before => Stage['main'] }
@@ -103,6 +139,7 @@ node default {
   }
   include sql
   include web
+  include mail
 }
 
 
